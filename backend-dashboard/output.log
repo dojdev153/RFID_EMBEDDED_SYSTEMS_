@@ -1,0 +1,30 @@
+nohup: ignoring input
+
+============================================================
+  RFID Card Top-Up System - Backend Server
+  Team ID: team^_^TopDog
+============================================================
+
+✓ HTTP Server running on port 9218
+✓ WebSocket Server ready
+✓ MQTT Client connecting to mqtt://broker.benax.rw:1883
+
+📍 Dashboard: http://localhost:9218
+📍 API Health: http://localhost:9218/health
+📍 API Status: http://localhost:9218/status
+
+Waiting for connections...
+
+[MQTT] Connected to broker: mqtt://broker.benax.rw:1883
+[MQTT] Subscribed to topics:
+  - rfid/team^_^TopDog/card/status
+  - rfid/team^_^TopDog/card/balance
+[WebSocket] New client connected from ::ffff:154.68.65.174
+[WebSocket] New client connected from ::ffff:154.68.65.174
+[WebSocket] Client disconnected from ::ffff:154.68.65.174
+[WebSocket] Client disconnected from ::ffff:154.68.65.174
+[WebSocket] New client connected from ::ffff:154.68.65.174
+[WebSocket] New client connected from ::ffff:154.68.65.174
+[WebSocket] New client connected from ::ffff:154.68.65.174
+[WebSocket] Client disconnected from ::ffff:154.68.65.174
+[WebSocket] New client connected from ::ffff:154.68.65.174
