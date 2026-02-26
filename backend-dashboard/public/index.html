@@ -1,0 +1,1087 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>RFID Payment System | team^_^topdog</title>
+
+    <!-- Google Font -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+
+    <style>
+        :root {
+            /* Premium FinTech Palette */
+            --bg-base: #0f172a;
+            /* Slate 900 */
+            --bg-surface: #1e293b;
+            /* Slate 800 */
+            --primary: #38bdf8;
+            /* Light Blue 400 */
+            --primary-glow: rgba(56, 189, 248, 0.4);
+            --secondary: #818cf8;
+            /* Indigo 400 */
+            --secondary-glow: rgba(129, 140, 248, 0.4);
+            --success: #34d399;
+            /* Emerald 400 */
+            --error: #fb7185;
+            /* Rose 400 */
+            --warning: #fbbf24;
+            /* Amber 400 */
+
+            /* Glassmorphism */
+            --glass-bg: rgba(30, 41, 59, 0.6);
+            --glass-border: rgba(255, 255, 255, 0.08);
+            --glass-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+
+            /* Typography */
+            --text-main: #f8fafc;
+            /* Slate 50 */
+            --text-muted: #94a3b8;
+            /* Slate 400 */
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Inter', -apple-system, sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-base);
+            background-image:
+                radial-gradient(circle at 15% 50%, rgba(56, 189, 248, 0.08), transparent 25%),
+                radial-gradient(circle at 85% 30%, rgba(129, 140, 248, 0.08), transparent 25%);
+            color: var(--text-main);
+            min-height: 100vh;
+            padding: 2rem 1rem;
+            line-height: 1.5;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        /* ===== GLASS PANEL BASE ===== */
+        .glass-panel {
+            background: var(--glass-bg);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid var(--glass-border);
+            border-radius: 20px;
+            box-shadow: var(--glass-shadow);
+        }
+
+        /* ===== HEADER ===== */
+        .header {
+            padding: 2.5rem 2rem;
+            text-align: center;
+            margin-bottom: 2rem;
+            position: relative;
+            overflow: hidden;
+        }
+
+        /* Subtle header highlight */
+        .header::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+        }
+
+        .header h1 {
+            font-size: 2.2rem;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+            background: linear-gradient(135deg, #fff 0%, #cbd5e1 100%);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 0.5rem;
+        }
+
+        .header p {
+            color: var(--text-muted);
+            font-size: 0.95rem;
+            font-weight: 500;
+        }
+
+        .ai-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 16px;
+            background: rgba(56, 189, 248, 0.1);
+            border: 1px solid rgba(56, 189, 248, 0.2);
+            border-radius: 20px;
+            color: var(--primary);
+            font-size: 0.75rem;
+            font-weight: 700;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            margin-top: 1rem;
+            box-shadow: 0 0 20px var(--primary-glow);
+            animation: breathe 3s ease-in-out infinite alternate;
+        }
+
+        @keyframes breathe {
+            0% {
+                box-shadow: 0 0 10px rgba(56, 189, 248, 0.2);
+                border-color: rgba(56, 189, 248, 0.2);
+            }
+
+            100% {
+                box-shadow: 0 0 25px rgba(56, 189, 248, 0.6);
+                border-color: rgba(56, 189, 248, 0.5);
+            }
+        }
+
+        /* ===== STATUS BAR ===== */
+        .status-bar {
+            display: flex;
+            justify-content: center;
+            gap: 3rem;
+            padding: 1rem 2rem;
+            margin-bottom: 2rem;
+            border-radius: 100px;
+            /* Pill shape */
+        }
+
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: var(--text-muted);
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #64748b;
+        }
+
+        .connected {
+            background: var(--success);
+            box-shadow: 0 0 10px rgba(52, 211, 153, 0.5);
+        }
+
+        .disconnected {
+            background: var(--error);
+            box-shadow: 0 0 10px rgba(251, 113, 133, 0.5);
+        }
+
+        /* ===== MAIN LAYOUT ===== */
+        .main-content {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .card {
+            padding: 2rem;
+            transition: transform 0.3s ease, border-color 0.3s ease;
+        }
+
+        .card:hover {
+            transform: translateY(-4px);
+            border-color: rgba(255, 255, 255, 0.15);
+        }
+
+        .card h2 {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: var(--text-main);
+            margin-bottom: 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .card h2 span {
+            font-size: 1.4rem;
+        }
+
+        /* ===== CURRENT CARD ===== */
+        .current-card {
+            background: linear-gradient(135deg, rgba(56, 189, 248, 0.1), rgba(129, 140, 248, 0.1));
+            border: 1px solid rgba(129, 140, 248, 0.2);
+            border-radius: 16px;
+            padding: 2rem;
+            text-align: center;
+            box-shadow: inset 0 0 20px rgba(56, 189, 248, 0.05);
+            min-height: 200px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            position: relative;
+            overflow: hidden;
+        }
+
+        /* Card shine effect */
+        .current-card::after {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: linear-gradient(to bottom right, rgba(255, 255, 255, 0) 40%, rgba(255, 255, 255, 0.05) 50%, rgba(255, 255, 255, 0) 60%);
+            transform: rotate(30deg) translate(-20%, -20%);
+        }
+
+        .current-card h3 {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 0.5rem;
+        }
+
+        .uid {
+            font-family: 'SF Mono', Consolas, monospace;
+            font-size: 1.25rem;
+            font-weight: 500;
+            margin: 0.5rem 0 1.5rem;
+            color: var(--primary);
+            letter-spacing: 2px;
+        }
+
+        .balance {
+            font-size: 2.75rem;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+            background: linear-gradient(to right, #f8fafc, #cbd5e1);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .balance-label {
+            font-size: 0.9rem;
+            color: var(--text-muted);
+            font-weight: 500;
+        }
+
+        /* ===== FORMS & INPUTS ===== */
+        label {
+            display: block;
+            font-size: 0.875rem;
+            font-weight: 500;
+            color: var(--text-muted);
+            margin-bottom: 0.5rem;
+        }
+
+        input {
+            width: 100%;
+            padding: 1rem 1.25rem;
+            margin-bottom: 1.5rem;
+            border-radius: 12px;
+            border: 1px solid var(--glass-border);
+            background: rgba(15, 23, 42, 0.6);
+            color: var(--text-main);
+            font-size: 1rem;
+            transition: all 0.2s ease;
+        }
+
+        input:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.15);
+            background: rgba(15, 23, 42, 0.8);
+        }
+
+        /* Quick Amount Buttons */
+        .quick-amounts {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 0.75rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .quick-amount-btn {
+            padding: 0.75rem;
+            background: transparent;
+            border: 1px solid var(--glass-border);
+            border-radius: 10px;
+            color: var(--text-main);
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .quick-amount-btn:hover {
+            border-color: var(--primary);
+            background: rgba(56, 189, 248, 0.05);
+            color: var(--primary);
+        }
+
+        /* Main Buttons */
+        .btn {
+            width: 100%;
+            padding: 1rem;
+            border-radius: 12px;
+            border: none;
+            cursor: pointer;
+            font-size: 1rem;
+            font-weight: 600;
+            letter-spacing: 0.025em;
+            color: #0f172a;
+            background: linear-gradient(135deg, var(--primary), var(--secondary));
+            box-shadow: 0 4px 14px 0 rgba(56, 189, 248, 0.39);
+            transition: all 0.2s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .btn:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(56, 189, 248, 0.5);
+        }
+
+        .btn:active:not(:disabled) {
+            transform: translateY(0);
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            background: #475569;
+            box-shadow: none;
+            color: #94a3b8;
+        }
+
+        .btn.btn-danger {
+            background: linear-gradient(135deg, #f43f5e, #e11d48);
+            box-shadow: 0 4px 14px 0 rgba(225, 29, 72, 0.39);
+            color: white;
+        }
+
+        .btn.btn-danger:hover:not(:disabled) {
+            box-shadow: 0 6px 20px rgba(225, 29, 72, 0.5);
+        }
+
+        /* ===== TRANSACTIONS ===== */
+        /* ===== TRANSACTIONS ===== */
+        .transaction-list {
+            max-height: 480px;
+            overflow-y: auto;
+            background: rgba(15, 23, 42, 0.4);
+            border-radius: 12px;
+            padding: 1rem;
+            border: 1px solid var(--glass-border);
+        }
+
+        .transaction-list::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .transaction-list::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+        }
+
+        .transaction-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem;
+            border-left: 3px solid var(--primary);
+            margin-bottom: 0.75rem;
+            background: rgba(255, 255, 255, 0.02);
+            border-radius: 8px;
+            transition: all 0.2s ease;
+        }
+
+        .transaction-item:hover {
+            background: rgba(255, 255, 255, 0.05);
+            transform: translateX(4px);
+        }
+
+        .transaction-type {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.7rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .transaction-type.topup {
+            background: rgba(52, 211, 153, 0.15);
+            color: var(--success);
+            border: 1px solid rgba(52, 211, 153, 0.3);
+        }
+
+        .transaction-type.payment {
+            background: rgba(251, 191, 36, 0.15);
+            color: var(--warning);
+            border: 1px solid rgba(251, 191, 36, 0.3);
+        }
+
+        .transaction-amount {
+            font-size: 1.1rem;
+            font-weight: 700;
+        }
+
+        .transaction-amount.positive {
+            color: var(--success);
+        }
+
+        .transaction-amount.negative {
+            color: var(--warning);
+        }
+
+        .transaction-time {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-top: 4px;
+        }
+
+        /* ===== LOG ===== */
+        .log {
+            background: #020617;
+            /* Very dark slate */
+            border-radius: 12px;
+            padding: 1.25rem;
+            font-family: 'SF Mono', Consolas, monospace;
+            max-height: 400px;
+            overflow-y: auto;
+            font-size: 0.85rem;
+            border: 1px solid var(--glass-border);
+            box-shadow: inset 0 2px 10px rgba(0, 0, 0, 0.5);
+        }
+
+        .log::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .log::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+        }
+
+        .log-entry {
+            margin-bottom: 0.75rem;
+            border-left: 2px solid var(--primary);
+            padding-left: 0.75rem;
+            animation: slideIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+            color: #cbd5e1;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(-10px);
+                opacity: 0;
+            }
+
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        .log-entry.success {
+            border-left-color: var(--success);
+        }
+
+        .log-entry.error {
+            border-left-color: var(--error);
+            color: #fca5a5;
+        }
+
+        .log-entry.info {
+            border-left-color: var(--secondary);
+        }
+
+        .timestamp {
+            color: #64748b;
+            font-size: 0.75rem;
+            margin-right: 8px;
+        }
+
+        /* ===== NOTIFICATION ===== */
+        .notification {
+            position: fixed;
+            top: 24px;
+            right: 24px;
+            padding: 16px 24px;
+            border-radius: 12px;
+            font-weight: 600;
+            color: #fff;
+            transform: translateX(120%);
+            transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .notification.show {
+            transform: translateX(0);
+        }
+
+        .notification.success {
+            background: rgba(16, 185, 129, 0.2);
+            border-left: 4px solid var(--success);
+        }
+
+        .notification.error {
+            background: rgba(244, 63, 94, 0.2);
+            border-left: 4px solid var(--error);
+        }
+
+        /* ===== FOOTER ===== */
+        .footer {
+            text-align: center;
+            margin-top: 30px;
+            font-size: 13px;
+            opacity: 0.7;
+        }
+
+        /* ===== SCROLLBAR ===== */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 10px;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--primary);
+            border-radius: 10px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--secondary);
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+
+        <div class="header glass-panel">
+            <h1>🤖 RFID Payment System Dashboard</h1>
+            <p><strong>Team:</strong> team^_^topdog | IoT Architecture + Payment Extension</p>
+            <span class="ai-badge">AI-ENHANCED PAYMENT SYSTEM</span>
+        </div>
+
+        <!-- Status Bar -->
+        <div class="status-bar glass-panel">
+            <div class="status-item">
+                <div class="status-dot" id="wsStatus"></div>
+                <span>WebSocket: <strong id="wsStatusText">Connecting...</strong></span>
+            </div>
+            <div class="status-item">
+                <div class="status-dot" id="mqttStatus"></div>
+                <span>MQTT: <strong id="mqttStatusText">Unknown</strong></span>
+            </div>
+            <div class="status-item">
+                Clients: <strong id="clientCount">0</strong>
+            </div>
+        </div>
+
+        <!-- Main Grid -->
+        <div class="main-content">
+
+            <!-- Current Card -->
+            <div class="card glass-panel">
+                <h2>📇 Current Card</h2>
+                <div class="current-card" id="currentCard">
+                    <h3>Card Detected</h3>
+                    <div class="uid" id="uidDisplay">Waiting...</div>
+                    <div class="balance" id="balanceDisplay">0</div>
+                    <div class="balance-label">RWF</div>
+                </div>
+            </div>
+
+            <!-- Top-Up -->
+            <div class="card glass-panel">
+                <h2>💰 AI Top-Up</h2>
+                <form id="topupForm" onsubmit="return handleTopup(event)">
+                    <label>Card UID</label>
+                    <input type="text" id="topupUID" placeholder="Scan card or enter UID" required />
+
+                    <label>Amount (RWF)</label>
+                    <div class="quick-amounts">
+                        <button type="button" class="quick-amount-btn" onclick="setAmount('topup', 500)">500</button>
+                        <button type="button" class="quick-amount-btn" onclick="setAmount('topup', 1000)">1000</button>
+                        <button type="button" class="quick-amount-btn" onclick="setAmount('topup', 2000)">2000</button>
+                    </div>
+                    <input type="number" id="topupAmount" placeholder="Enter amount" min="1" required />
+
+                    <button class="btn" id="topupBtn" type="submit">⚡ Smart Top-Up</button>
+                </form>
+            </div>
+
+            <!-- Payment -->
+            <div class="card glass-panel">
+                <h2>💳 Make Payment</h2>
+                <form id="paymentForm" onsubmit="return handlePayment(event)">
+                    <label>Card UID</label>
+                    <input type="text" id="paymentUID" placeholder="Scan card or enter UID" required />
+
+                    <label>Payment Amount (RWF)</label>
+                    <div class="quick-amounts">
+                        <button type="button" class="quick-amount-btn" onclick="setAmount('payment', 100)">100</button>
+                        <button type="button" class="quick-amount-btn" onclick="setAmount('payment', 500)">500</button>
+                        <button type="button" class="quick-amount-btn"
+                            onclick="setAmount('payment', 1000)">1000</button>
+                    </div>
+                    <input type="number" id="paymentAmount" placeholder="Enter amount" min="1" required />
+
+                    <button class="btn btn-danger" id="paymentBtn" type="submit">💸 Process Payment</button>
+                </form>
+            </div>
+
+        </div>
+
+        <!-- History & Logs Grid -->
+        <div class="main-content" style="grid-template-columns: 2fr 1fr;">
+            <!-- Transaction History -->
+            <div class="card glass-panel">
+                <h2>📊 Transaction History</h2>
+                <div class="transaction-list" id="transactionList">
+                    <p style="text-align: center; opacity: 0.5; padding: 40px;">No transactions yet</p>
+                </div>
+            </div>
+
+            <!-- Live Activity Log -->
+            <div class="card glass-panel">
+                <h2>📡 Live Activity Log</h2>
+                <div class="log" id="log"></div>
+            </div>
+        </div>
+
+        <div class="footer">
+            AI-Powered RFID Payment System • MQTT • WebSockets • SQLite • team^_^topdog
+        </div>
+    </div>
+
+    <script>
+        // Configuration
+        const WS_URL = window.location.origin.replace(/^http/, 'ws');
+        let ws = null;
+        let reconnectInterval = null;
+        let currentCardData = null;
+
+        // Initialize WebSocket connection
+        function connectWebSocket() {
+            addLog('Connecting to WebSocket server...', 'system');
+
+            ws = new WebSocket(WS_URL);
+
+            ws.onopen = () => {
+                updateStatus('ws', true);
+                addLog('✓ WebSocket connected successfully', 'success');
+                if (reconnectInterval) {
+                    clearInterval(reconnectInterval);
+                    reconnectInterval = null;
+                }
+            };
+
+            ws.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    handleMessage(data);
+                } catch (error) {
+                    console.error('Message parse error:', error);
+                }
+            };
+
+            ws.onerror = (error) => {
+                updateStatus('ws', false);
+                addLog('✗ WebSocket error occurred', 'error');
+                console.error('WebSocket error:', error);
+            };
+
+            ws.onclose = () => {
+                updateStatus('ws', false);
+                addLog('✗ WebSocket disconnected. Reconnecting in 5s...', 'error');
+
+                if (!reconnectInterval) {
+                    reconnectInterval = setInterval(() => {
+                        addLog('Attempting to reconnect...', 'info');
+                        connectWebSocket();
+                    }, 5000);
+                }
+            };
+        }
+
+        // Handle incoming messages
+        function handleMessage(data) {
+            if (data.type === 'connection') {
+                addLog(`✓ ${data.message}`, 'success');
+                return;
+            }
+
+            if (data.type === 'mqtt') {
+                const topic = data.topic;
+                const mqttData = data.data;
+
+                // Card status (scanned)
+                if (topic.includes('/card/status')) {
+                    currentCardData = mqttData;
+                    updateCurrentCard(mqttData);
+                    addLog(`📇 Card scanned: ${mqttData.uid} | Balance: ${mqttData.balance} RWF`, 'info');
+
+                    // Auto-fill UID fields
+                    document.getElementById('topupUID').value = mqttData.uid;
+                    document.getElementById('paymentUID').value = mqttData.uid;
+                }
+
+                // Balance update
+                else if (topic.includes('/card/balance')) {
+                    if (currentCardData && currentCardData.uid === mqttData.uid) {
+                        currentCardData.balance = mqttData.new_balance;
+                        updateCurrentCard(currentCardData);
+                    }
+                    addLog(`✓ Balance updated: ${mqttData.uid} | New Balance: ${mqttData.new_balance} RWF`, 'success');
+
+                    // Reload transactions
+                    loadTransactions();
+                }
+
+                // Payment result (NEW)
+                else if (topic.includes('/card/payment/result')) {
+                    if (mqttData.success) {
+                        addLog(`✅ Payment successful: ${mqttData.uid} | -${mqttData.amount} RWF | Balance: ${mqttData.new_balance} RWF`, 'success');
+                        showNotification(`Payment successful! New balance: ${mqttData.new_balance} RWF`, 'success');
+
+                        if (currentCardData && currentCardData.uid === mqttData.uid) {
+                            currentCardData.balance = mqttData.new_balance;
+                            updateCurrentCard(currentCardData);
+                        }
+                    } else {
+                        addLog(`❌ Payment failed: ${mqttData.message}`, 'error');
+                        showNotification(`Payment failed: ${mqttData.message}`, 'error');
+                    }
+
+                    // Reset payment form
+                    document.getElementById('paymentAmount').value = '';
+                    document.getElementById('paymentBtn').disabled = false;
+                    document.getElementById('paymentBtn').textContent = '💸 Process Payment';
+
+                    // Reload transactions
+                    loadTransactions();
+                }
+
+                // Top-up result (NEW)
+                else if (topic.includes('/card/topup/result')) {
+                    if (mqttData.success) {
+                        addLog(`✅ Top-up successful: ${mqttData.uid} | +${mqttData.amount} RWF | Balance: ${mqttData.new_balance} RWF`, 'success');
+                        showNotification(`Top-up successful! New balance: ${mqttData.new_balance} RWF`, 'success');
+
+                        if (currentCardData && currentCardData.uid === mqttData.uid) {
+                            currentCardData.balance = mqttData.new_balance;
+                            updateCurrentCard(currentCardData);
+                        }
+                    } else {
+                        addLog(`❌ Top-up failed: ${mqttData.message}`, 'error');
+                        showNotification(`Top-up failed: ${mqttData.message}`, 'error');
+                    }
+
+                    // Reset topup form
+                    document.getElementById('topupAmount').value = '';
+                    document.getElementById('topupBtn').disabled = false;
+                    document.getElementById('topupBtn').textContent = '⚡ Smart Top-Up';
+
+                    // Reload transactions
+                    loadTransactions();
+                }
+
+                // Update MQTT status
+                updateStatus('mqtt', true);
+            }
+        }
+
+        // Update current card display
+        function updateCurrentCard(data) {
+            const cardDiv = document.getElementById('currentCard');
+            cardDiv.innerHTML = `
+                <h3>Card Detected</h3>
+                <div class="uid">${data.uid}</div>
+                <div class="balance">${data.balance || 0}</div>
+                <div class="balance-label">RWF</div>
+            `;
+        }
+
+        // Set quick amount
+        function setAmount(type, amount) {
+            if (type === 'topup') {
+                document.getElementById('topupAmount').value = amount;
+            } else if (type === 'payment') {
+                document.getElementById('paymentAmount').value = amount;
+            }
+        }
+
+        // Handle top-up form submission
+        async function handleTopup(event) {
+            event.preventDefault();
+
+            const uid = document.getElementById('topupUID').value.toUpperCase().trim();
+            const amount = parseInt(document.getElementById('topupAmount').value);
+            const btn = document.getElementById('topupBtn');
+
+            if (!uid || !amount || amount <= 0) {
+                showNotification('Please enter valid UID and amount', 'error');
+                return false;
+            }
+
+            // Disable button
+            btn.disabled = true;
+            btn.textContent = '⏳ Processing (10s)...';
+
+            // Safety timeout to unlock button
+            const unlockTimeout = setTimeout(() => {
+                if (btn.disabled) {
+                    btn.disabled = false;
+                    btn.textContent = '⚡ Smart Top-Up';
+                    showNotification('No response from card reader', 'warning');
+                    addLog('⚠️ Top-up timed out waiting for card reader', 'warning');
+                }
+            }, 12000);
+
+            try {
+                const response = await fetch('/api/topup', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ uid, amount })
+                });
+
+                const result = await response.json();
+
+                if (response.ok && result.success) {
+                    addLog(`✓ ${result.message}`, 'info');
+                    showNotification(result.message, 'info');
+                } else {
+                    clearTimeout(unlockTimeout);
+                    btn.disabled = false;
+                    btn.textContent = '⚡ Smart Top-Up';
+                    addLog(`✗ Top-up request failed: ${result.message}`, 'error');
+                    showNotification(result.message || 'Request failed', 'error');
+                }
+            } catch (error) {
+                clearTimeout(unlockTimeout);
+                btn.disabled = false;
+                btn.textContent = '⚡ Smart Top-Up';
+                addLog(`✗ Network error: ${error.message}`, 'error');
+                showNotification('Network error. Please try again.', 'error');
+            }
+
+            return false;
+        }
+
+        // Handle payment form submission (NEW)
+        async function handlePayment(event) {
+            event.preventDefault();
+
+            const uid = document.getElementById('paymentUID').value.toUpperCase().trim();
+            const amount = parseInt(document.getElementById('paymentAmount').value);
+            const btn = document.getElementById('paymentBtn');
+
+            if (!uid || !amount || amount <= 0) {
+                showNotification('Please enter valid UID and amount', 'error');
+                return false;
+            }
+
+            // Disable button
+            btn.disabled = true;
+            btn.textContent = '⏳ Processing (10s)...';
+
+            // Safety timeout to unlock button
+            const unlockTimeout = setTimeout(() => {
+                if (btn.disabled) {
+                    btn.disabled = false;
+                    btn.textContent = '💸 Process Payment';
+                    showNotification('No response from card reader', 'warning');
+                    addLog('⚠️ Payment timed out waiting for card reader', 'warning');
+                }
+            }, 12000);
+
+            try {
+                const response = await fetch('/api/pay', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ uid, amount })
+                });
+
+                const result = await response.json();
+
+                if (response.ok && result.success) {
+                    addLog(`✓ ${result.message}`, 'info');
+                    showNotification(result.message, 'info');
+                } else {
+                    clearTimeout(unlockTimeout);
+                    btn.disabled = false;
+                    btn.textContent = '💸 Process Payment';
+                    addLog(`✗ Payment request failed: ${result.message}`, 'error');
+                    showNotification(result.message || 'Payment failed', 'error');
+                }
+            } catch (error) {
+                clearTimeout(unlockTimeout);
+                btn.disabled = false;
+                btn.textContent = '💸 Process Payment';
+                addLog(`✗ Network error: ${error.message}`, 'error');
+                showNotification('Network error. Please try again.', 'error');
+            }
+
+            return false;
+        }
+
+        // Load transaction history (NEW)
+        async function loadTransactions() {
+            try {
+                const response = await fetch('/api/transactions?limit=10');
+                const data = await response.json();
+
+                if (data.success && data.transactions && data.transactions.length > 0) {
+                    displayTransactions(data.transactions);
+                }
+            } catch (error) {
+                console.error('Error loading transactions:', error);
+            }
+        }
+
+        // Display transactions (NEW)
+        function displayTransactions(transactions) {
+            const listElement = document.getElementById('transactionList');
+
+            if (transactions.length === 0) {
+                listElement.innerHTML = '<p style="text-align: center; opacity: 0.5; padding: 40px;">No transactions yet</p>';
+                return;
+            }
+
+            listElement.innerHTML = transactions.map(tx => {
+                const isPositive = tx.type === 'TOPUP';
+                const amountClass = isPositive ? 'positive' : 'negative';
+                const amountSign = isPositive ? '+' : '-';
+                const typeClass = tx.type.toLowerCase();
+                const date = new Date(tx.timestamp);
+
+                return `
+                    <div class="transaction-item">
+                        <div>
+                            <div><span class="transaction-type ${typeClass}">${tx.type}</span></div>
+                            <div style="margin-top: 5px; font-size: 13px; opacity: 0.7;">
+                                ${tx.uid}
+                            </div>
+                            <div class="transaction-time">
+                                ${date.toLocaleString()}
+                            </div>
+                        </div>
+                        <div style="text-align: right;">
+                            <div class="transaction-amount ${amountClass}">
+                                ${amountSign}${tx.amount} RWF
+                            </div>
+                            <div style="font-size: 12px; opacity: 0.6; margin-top: 5px;">
+                                Balance: ${tx.balance_after} RWF
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // Add log entry
+        function addLog(message, type = 'info') {
+            const logDiv = document.getElementById('log');
+            const timestamp = new Date().toLocaleTimeString();
+
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            entry.innerHTML = `<span class="timestamp">[${timestamp}]</span> ${message}`;
+
+            logDiv.appendChild(entry);
+            logDiv.scrollTop = logDiv.scrollHeight;
+
+            // Limit log entries
+            while (logDiv.children.length > 50) {
+                logDiv.removeChild(logDiv.firstChild);
+            }
+        }
+
+        // Update connection status
+        function updateStatus(type, connected) {
+            const dot = document.getElementById(`${type}Status`);
+            const text = document.getElementById(`${type}StatusText`);
+
+            if (connected) {
+                dot.classList.add('connected');
+                dot.classList.remove('disconnected');
+                text.textContent = 'Connected';
+                text.style.color = '#4CAF50';
+            } else {
+                dot.classList.add('disconnected');
+                dot.classList.remove('connected');
+                text.textContent = 'Disconnected';
+                text.style.color = '#f44336';
+            }
+        }
+
+        // Show notification
+        function showNotification(message, type = 'success') {
+            const notification = document.createElement('div');
+            notification.className = `notification ${type}`;
+            notification.textContent = message;
+            document.body.appendChild(notification);
+
+            setTimeout(() => {
+                notification.style.animation = 'slideInRight 0.3s ease reverse';
+                setTimeout(() => notification.remove(), 300);
+            }, 3000);
+        }
+
+        // Check server health periodically
+        async function checkHealth() {
+            try {
+                const response = await fetch('/api/status');
+                const data = await response.json();
+
+                if (data.mqtt_connected) {
+                    updateStatus('mqtt', true);
+                }
+
+                if (data.websocket_clients !== undefined) {
+                    document.getElementById('clientCount').textContent = data.websocket_clients;
+                }
+            } catch (error) {
+                console.error('Health check failed:', error);
+                updateStatus('mqtt', false);
+            }
+        }
+
+        // Initialize
+        window.onload = () => {
+            connectWebSocket();
+            loadTransactions();
+            setInterval(checkHealth, 10000);
+            setInterval(loadTransactions, 15000);
+            addLog('✓ Dashboard loaded successfully', 'success');
+        };
+
+        // Cleanup on page unload
+        window.onbeforeunload = () => {
+            if (ws) {
+                ws.close();
+            }
+        };
+    </script>
+</body>
+
+</html>

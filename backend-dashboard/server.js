@@ -1,280 +1,264 @@
 /**
- * RFID Card Top-Up System - Backend API Service
- * Team: Darius_Divine_Louise
- * Instructor: Gabriel Baziramwabo
- * 
- * This server acts as a bridge between:
- * - Web clients (HTTP/WebSocket)
- * - ESP8266 devices (MQTT)
+ * RFID Payment System - Backend Server
+ * Team: ^_^TopDog
+ * Assignment Extension: Payment Feature
+ *
+ * Features:
+ * - HTTP API (top-up + payment)
+ * - MQTT bridge to ESP8266
+ * - WebSocket real-time updates
+ * - SQLite transaction logging
  */
 
-const express = require("express");
-const http = require("http");
-const WebSocket = require("ws");
-const mqtt = require("mqtt");
-const path = require("path");
-const cors = require("cors");
-const HOST = "157.173.101.159";
+const express = require('express');
+const http = require('http');
+const WebSocket = require('ws');
+const mqtt = require('mqtt');
+const sqlite3 = require('sqlite3').verbose();
+const path = require('path');
+const cors = require('cors');
 
-// ================= CONFIGURATION =================
-const TEAM_ID = "team^_^TopDog";
+// ==================== CONFIG ====================
 const PORT = process.env.PORT || 9218;
-const MQTT_BROKER = process.env.MQTT_BROKER || "mqtt://broker.benax.rw:1883";
+const MQTT_BROKER = process.env.MQTT_BROKER || 'mqtt://broker.benax.rw:1883';
+const TEAM_ID = 'team^_^TopDog';
 
-// MQTT Topics - Following strict isolation rules
-const TOPIC_STATUS  = `rfid/${TEAM_ID}/card/status`;
-const TOPIC_TOPUP   = `rfid/${TEAM_ID}/card/topup`;
-const TOPIC_BALANCE = `rfid/${TEAM_ID}/card/balance`;
+// MQTT Topics (strict isolation)
+const TOPICS = {
+  STATUS: `rfid/${TEAM_ID}/card/status`,
+  TOPUP: `rfid/${TEAM_ID}/card/topup`,
+  TOPUP_RESULT: `rfid/${TEAM_ID}/card/topup/result`,
+  BALANCE: `rfid/${TEAM_ID}/card/balance`,
+  PAYMENT: `rfid/${TEAM_ID}/card/payment`,
+  PAYMENT_RESULT: `rfid/${TEAM_ID}/card/payment/result`
+};
 
-// ================= EXPRESS SETUP =================
+// ==================== EXPRESS ====================
 const app = express();
-app.use(cors());
-app.use(express.json());
-//app.use(express.static(path.join(__dirname, "../dashboard")));
-// app.get("/", (req, res) => {
-//   res.sendFile(path.join(__dirname, "dashboard.html"));
-// });
-
-
-// ================= HTTP SERVER =================
 const server = http.createServer(app);
-
-// ================= WEBSOCKET SERVER =================
 const wss = new WebSocket.Server({ server });
 
-// Track connected WebSocket clients
-let wsClients = new Set();
+app.use(cors());
+app.use(express.json());
+app.use(express.static(path.join(__dirname, 'public')));
 
-wss.on("connection", (ws, req) => {
-  const clientIp = req.socket.remoteAddress;
-  console.log(`[WebSocket] New client connected from ${clientIp}`);
-  wsClients.add(ws);
-
-  // Send welcome message
-  ws.send(JSON.stringify({
-    type: "connection",
-    message: "Connected to RFID Top-Up System",
-    team_id: TEAM_ID,
-    timestamp: new Date().toISOString()
-  }));
-
-  ws.on("close", () => {
-    console.log(`[WebSocket] Client disconnected from ${clientIp}`);
-    wsClients.delete(ws);
-  });
-
-  ws.on("error", (error) => {
-    console.error(`[WebSocket] Error:`, error.message);
-    wsClients.delete(ws);
-  });
+// ==================== DATABASE ====================
+const db = new sqlite3.Database('./rfid_transactions.db', (err) => {
+  if (err) {
+    console.error('❌ SQLite error:', err.message);
+  } else {
+    console.log('✅ SQLite connected');
+    initDB();
+  }
 });
 
-// Broadcast to all connected WebSocket clients
-function broadcastToClients(data) {
-  const message = JSON.stringify(data);
-  let sent = 0;
-  
-  wsClients.forEach(ws => {
-    if (ws.readyState === WebSocket.OPEN) {
-      try {
-        ws.send(message);
-        sent++;
-      } catch (error) {
-        console.error("[WebSocket] Send error:", error.message);
-      }
-    }
-  });
-  
-  console.log(`[WebSocket] Broadcast to ${sent} client(s)`);
+function initDB() {
+  db.run(`
+    CREATE TABLE IF NOT EXISTS transactions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      uid TEXT NOT NULL,
+      type TEXT NOT NULL,
+      amount INTEGER NOT NULL,
+      balance_before INTEGER,
+      balance_after INTEGER,
+      success INTEGER DEFAULT 1,
+      message TEXT,
+      timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  db.run(`CREATE INDEX IF NOT EXISTS idx_uid ON transactions(uid)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_time ON transactions(timestamp)`);
 }
 
-// ================= MQTT CLIENT =================
+function logTransaction(uid, type, amount, before, after, success = true, message = '') {
+  db.run(
+    `INSERT INTO transactions
+     (uid, type, amount, balance_before, balance_after, success, message)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [uid, type, amount, before, after, success ? 1 : 0, message]
+  );
+}
+
+// ==================== MQTT ====================
 const mqttClient = mqtt.connect(MQTT_BROKER, {
   clientId: `backend_${TEAM_ID}_${Date.now()}`,
   clean: true,
   reconnectPeriod: 5000
 });
 
-mqttClient.on("connect", () => {
-  console.log("[MQTT] Connected to broker:", MQTT_BROKER);
-  
-  // Subscribe to relevant topics
-  mqttClient.subscribe([TOPIC_STATUS, TOPIC_BALANCE], (err) => {
-    if (err) {
-      console.error("[MQTT] Subscription error:", err);
-    } else {
-      console.log("[MQTT] Subscribed to topics:");
-      console.log("  -", TOPIC_STATUS);
-      console.log("  -", TOPIC_BALANCE);
-    }
+mqttClient.on('connect', () => {
+  console.log('✅ MQTT connected');
+
+  Object.values(TOPICS).forEach(topic => {
+    mqttClient.subscribe(topic);
   });
 });
 
-mqttClient.on("message", (topic, message) => {
+mqttClient.on('message', (topic, message) => {
   try {
     const data = JSON.parse(message.toString());
-    
-    // Add topic info and timestamp
-    const enrichedData = {
-      ...data,
-      topic: topic,
-      received_at: new Date().toISOString()
-    };
-    
-    console.log(`[MQTT] Message from ${topic}:`, data);
-    
-    // Broadcast to all WebSocket clients
-    broadcastToClients(enrichedData);
-    
-  } catch (error) {
-    console.error("[MQTT] Message parsing error:", error.message);
-  }
-});
+    console.log(`📨 MQTT [${topic}]`, data);
 
-mqttClient.on("error", (error) => {
-  console.error("[MQTT] Connection error:", error.message);
-});
-
-mqttClient.on("reconnect", () => {
-  console.log("[MQTT] Reconnecting...");
-});
-
-mqttClient.on("offline", () => {
-  console.log("[MQTT] Client offline");
-});
-
-// ================= HTTP API ENDPOINTS =================
-
-// Health check endpoint
-app.get("/health", (req, res) => {
-  res.json({
-    status: "healthy",
-    team_id: TEAM_ID,
-    mqtt_connected: mqttClient.connected,
-    websocket_clients: wsClients.size,
-    timestamp: new Date().toISOString()
-  });
-});
-
-// Get system status
-app.get("/status", (req, res) => {
-  res.json({
-    team_id: TEAM_ID,
-    mqtt_broker: MQTT_BROKER,
-    mqtt_connected: mqttClient.connected,
-    active_connections: wsClients.size,
-    topics: {
-      status: TOPIC_STATUS,
-      topup: TOPIC_TOPUP,
-      balance: TOPIC_BALANCE
-    },
-    timestamp: new Date().toISOString()
-  });
-});
-
-// Top-up endpoint (main functionality)
-app.post("/topup", (req, res) => {
-  const { uid, amount } = req.body;
-  
-  // Validation
-  if (!uid) {
-    return res.status(400).json({
-      error: "Missing required field: uid"
+    broadcast({
+      type: 'mqtt',
+      topic,
+      data
     });
-  }
-  
-  if (!amount || typeof amount !== "number" || amount <= 0) {
-    return res.status(400).json({
-      error: "Invalid amount: must be a positive number"
-    });
-  }
-  
-  // Check MQTT connection
-  if (!mqttClient.connected) {
-    return res.status(503).json({
-      error: "MQTT broker not connected"
-    });
-  }
-  
-  // Prepare payload
-  const payload = {
-    uid: uid.toUpperCase(),
-    amount: amount,
-    timestamp: new Date().toISOString()
-  };
-  
-  // Publish to MQTT
-  mqttClient.publish(TOPIC_TOPUP, JSON.stringify(payload), (err) => {
-    if (err) {
-      console.error("[MQTT] Publish error:", err);
-      return res.status(500).json({
-        error: "Failed to send top-up command",
-        details: err.message
-      });
+
+    if (topic === TOPICS.PAYMENT_RESULT) {
+      handlePaymentResult(data);
     }
-    
-    console.log("[HTTP] Top-up command sent:", payload);
-    
-    res.json({
-      status: "success",
-      message: "Top-up command sent to ESP8266",
-      data: payload
-    });
+    if (topic === TOPICS.TOPUP_RESULT) {
+      handleTopupResult(data);
+    }
+  } catch (err) {
+    console.error('❌ MQTT parse error:', err.message);
+  }
+});
+
+function handleTopupResult(data) {
+  if (data.success) {
+    logTransaction(
+      data.uid,
+      'TOPUP',
+      data.amount,
+      data.new_balance - data.amount,
+      data.new_balance,
+      true,
+      data.message
+    );
+  } else {
+    logTransaction(
+      data.uid,
+      'TOPUP',
+      data.amount,
+      data.new_balance || 0,
+      data.new_balance || 0,
+      false,
+      data.message
+    );
+  }
+}
+
+function handlePaymentResult(data) {
+  if (data.success) {
+    logTransaction(
+      data.uid,
+      'PAYMENT',
+      data.amount,
+      data.new_balance + data.amount,
+      data.new_balance,
+      true,
+      data.message
+    );
+  } else {
+    logTransaction(
+      data.uid,
+      'PAYMENT',
+      data.amount,
+      data.new_balance || 0,
+      data.new_balance || 0,
+      false,
+      data.message
+    );
+  }
+}
+
+// ==================== WEBSOCKET ====================
+const clients = new Set();
+
+wss.on('connection', (ws) => {
+  clients.add(ws);
+
+  ws.send(JSON.stringify({
+    type: 'connection',
+    message: 'Connected to RFID Payment System',
+    team_id: TEAM_ID
+  }));
+
+  ws.on('close', () => clients.delete(ws));
+  ws.on('error', () => clients.delete(ws));
+});
+
+function broadcast(payload) {
+  const msg = JSON.stringify(payload);
+  clients.forEach(ws => {
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(msg);
+    }
+  });
+}
+
+// ==================== API ====================
+
+// Health
+app.get('/api/status', (req, res) => {
+  res.json({
+    status: 'online',
+    mqtt_connected: mqttClient.connected,
+    websocket_clients: clients.size,
+    team_id: TEAM_ID
   });
 });
 
-// Serve dashboard
-app.get("/", (req, res) => {
-  res.sendFile(path.join(__dirname, "dashboard.html"));
+// Top-up
+app.post('/api/topup', (req, res) => {
+  const { uid, amount } = req.body;
+
+  if (!uid || amount <= 0) {
+    return res.status(400).json({ success: false, message: 'Invalid UID or amount' });
+  }
+
+  mqttClient.publish(TOPICS.TOPUP, JSON.stringify({ uid, amount }));
+  res.json({ success: true, uid, amount, message: 'Top-up request sent to card reader' });
 });
 
-// 404 handler
-app.use((req, res) => {
-  res.status(404).json({
-    error: "Endpoint not found",
-    path: req.path
+// Payment (NEW)
+app.post('/api/pay', (req, res) => {
+  const { uid, amount } = req.body;
+
+  if (!uid || amount <= 0) {
+    return res.status(400).json({ success: false, message: 'Invalid UID or amount' });
+  }
+
+  mqttClient.publish(TOPICS.PAYMENT, JSON.stringify({ uid, amount }));
+  res.json({ success: true, uid, amount, message: 'Payment request sent to card reader' });
+});
+
+// Transactions
+app.get('/api/transactions', (req, res) => {
+  const { uid, limit = 50 } = req.query;
+
+  let sql = 'SELECT * FROM transactions';
+  let params = [];
+
+  if (uid) {
+    sql += ' WHERE uid = ?';
+    params.push(uid);
+  }
+
+  sql += ' ORDER BY timestamp DESC LIMIT ?';
+  params.push(Number(limit));
+
+  db.all(sql, params, (err, rows) => {
+    if (err) return res.status(500).json({ success: false });
+    res.json({ success: true, transactions: rows });
   });
 });
 
-// Error handler
-app.use((err, req, res, next) => {
-  console.error("[Error]", err.stack);
-  res.status(500).json({
-    error: "Internal server error",
-    message: err.message
-  });
-});
-
-// ================= SERVER START =================
+// ==================== START ====================
 server.listen(PORT, () => {
-  console.log("\n" + "=".repeat(60));
-  console.log("  RFID Card Top-Up System - Backend Server");
-  console.log("  Team ID:", TEAM_ID);
-  console.log("=".repeat(60));
-  console.log(`\n✓ HTTP Server running on port ${PORT}`);
-  console.log(`✓ WebSocket Server ready`);
-  console.log(`✓ MQTT Client connecting to ${MQTT_BROKER}`);
-  console.log(`\n📍 Dashboard: http://localhost:${PORT}`);
-  console.log(`📍 API Health: http://localhost:${PORT}/health`);
-  console.log(`📍 API Status: http://localhost:${PORT}/status`);
-  console.log("\nWaiting for connections...\n");
+  console.log('\n🚀 RFID Payment Backend');
+  console.log(`HTTP  : http://localhost:${PORT}`);
+  console.log(`WS    : ws://localhost:${PORT}`);
+  console.log(`MQTT  : ${MQTT_BROKER}`);
+  console.log(`TEAM  : ${TEAM_ID}\n`);
 });
 
-// ================= GRACEFUL SHUTDOWN =================
-process.on("SIGINT", () => {
-  console.log("\n\nShutting down gracefully...");
-  
-  // Close WebSocket connections
-  wsClients.forEach(ws => {
-    ws.close();
-  });
-  
-  // Close MQTT connection
+// ==================== SHUTDOWN ====================
+process.on('SIGINT', () => {
+  console.log('\n🛑 Shutting down...');
   mqttClient.end();
-  
-  // Close HTTP server
-  server.close(() => {
-    console.log("Server closed");
-    process.exit(0);
-  });
+  db.close(() => process.exit(0));
 });

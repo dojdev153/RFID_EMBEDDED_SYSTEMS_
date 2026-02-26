@@ -1,247 +1,255 @@
-"""
-RFID Card Top-Up System - ESP8266 Edge Controller
-Team: Darius_Divine_Louise
-Instructor: Gabriel Baziramwabo
-
-This module handles RFID card reading/writing and MQTT communication.
-"""
-
 import time
 import network
 import machine
 import ubinascii
 import ujson
 from umqtt.simple import MQTTClient
-from machine import Pin, SPI
 from mfrc522 import MFRC522
-
-# ================= CONFIGURATION =================
-TEAM_ID = "team^_^TopDog"  # Unique team identifier for MQTT topics
+TEAM = "team^_^TopDog"
 WIFI_SSID = "RCA"
 WIFI_PASS = "@RcaNyabihu2023"
 MQTT_BROKER = "broker.benax.rw"
 MQTT_PORT = 1883
-
-# MQTT Topics - Following strict isolation rules
-TOPIC_STATUS  = b"rfid/" + TEAM_ID.encode() + b"/card/status"
-TOPIC_TOPUP   = b"rfid/" + TEAM_ID.encode() + b"/card/topup"
-TOPIC_BALANCE = b"rfid/" + TEAM_ID.encode() + b"/card/balance"
-
+T_STATUS = b"rfid/" + TEAM.encode() + b"/card/status"
+T_TOPUP = b"rfid/" + TEAM.encode() + b"/card/topup"
+T_TOPUP_RES = b"rfid/" + TEAM.encode() + b"/card/topup/result"
+T_BALANCE = b"rfid/" + TEAM.encode() + b"/card/balance"
+T_PAYMENT = b"rfid/" + TEAM.encode() + b"/card/payment"
+T_PAY_RES = b"rfid/" + TEAM.encode() + b"/card/payment/result"
 CLIENT_ID = b"esp_" + ubinascii.hexlify(machine.unique_id())
-
-# LED for status indication (optional)
-led = Pin(2, Pin.OUT)
-led.value(1)  # Off (inverted on ESP8266)
-
-# ================= WIFI CONNECTION =================
+led = machine.Pin(2, machine.Pin.OUT)
+led.value(1)
+KEY = [0xFF] * 6
+BLOCK = 5
+rfid = None
+client = None
 def wifi_connect():
-    """Connect to WiFi network with retry logic"""
     wlan = network.WLAN(network.STA_IF)
     wlan.active(True)
-    
     if wlan.isconnected():
-        print("Already connected to WiFi")
-        print("IP:", wlan.ifconfig()[0])
+        print("WiFi OK:", wlan.ifconfig()[0])
         return True
-    
-    print("Connecting to WiFi:", WIFI_SSID)
+    print("Connecting WiFi...")
     wlan.connect(WIFI_SSID, WIFI_PASS)
-    
-    retry_count = 0
-    max_retries = 20
-    
-    while not wlan.isconnected() and retry_count < max_retries:
-        led.value(not led.value())  # Blink LED
+    for _ in range(20):
+        if wlan.isconnected():
+            print("WiFi OK:", wlan.ifconfig()[0])
+            led.value(1)
+            return True
+        led.value(not led.value())
         time.sleep(0.5)
-        retry_count += 1
-    
-    if wlan.isconnected():
-        led.value(1)  # Turn off LED
-        print("WiFi connected successfully!")
-        print("IP Address:", wlan.ifconfig()[0])
-        return True
-    else:
-        print("Failed to connect to WiFi")
-        return False
-
-# ================= RFID SETUP =================
-def setup_rfid():
-    """Initialize RFID reader"""
+    print("WiFi FAILED")
+    return False
+def read_balance(uid):
     try:
-        rfid_reader = MFRC522(sck=14, mosi=13, miso=12, rst=0, cs=15)
-        print("RFID reader initialized")
-        return rfid_reader
-    except Exception as e:
-        print("RFID initialization error:", e)
-        return None
-
-
-# In-memory card balance storage
-card_balances = {}
-
-# ================= MQTT CALLBACK =================
-def on_mqtt_msg(topic, msg):
-    """Handle incoming MQTT messages (top-up commands)"""
+        rfid.select_tag(uid)
+        if rfid.auth(rfid.AUTHENT1A, BLOCK, KEY, uid) == rfid.OK:
+            data = rfid.read(BLOCK)
+            rfid.stop_crypto1()
+            if data and len(data) >= 4:
+                return data[0] | (data[1] << 8) | (data[2] << 16) | (data[3] << 24)
+        rfid.stop_crypto1()
+        return 0
+    except:
+        rfid.stop_crypto1()
+        return 0
+def execute_tx(uid, is_topup, amt):
+    try:
+        rfid.select_tag(uid)
+        if rfid.auth(rfid.AUTHENT1A, BLOCK, KEY, uid) == rfid.OK:
+            data = rfid.read(BLOCK)
+            if not data or len(data) < 4:
+                rfid.stop_crypto1()
+                return False, 0, 0, "Read failed"
+            bal = data[0] | (data[1] << 8) | (data[2] << 16) | (data[3] << 24)
+            if not is_topup and bal < amt:
+                rfid.stop_crypto1()
+                return False, bal, bal, "Insufficient balance"
+            new_bal = bal + amt if is_topup else bal - amt
+            w_data = [new_bal & 0xFF, (new_bal >> 8) & 0xFF, (new_bal >> 16) & 0xFF, (new_bal >> 24) & 0xFF] + [0] * 12
+            ok = rfid.write(BLOCK, w_data) == rfid.OK
+            rfid.stop_crypto1()
+            if ok:
+                return True, bal, new_bal, "OK"
+            return False, bal, bal, "Write error"
+        rfid.stop_crypto1()
+        return False, 0, 0, "Auth error"
+    except:
+        rfid.stop_crypto1()
+        return False, 0, 0, "Error"
+def scan_card():
+    try:
+        if rfid.request(rfid.REQIDL)[0] == rfid.OK:
+            stat, uid = rfid.anticoll()
+            if stat == rfid.OK:
+                uid_str = "".join("{:02X}".format(x) for x in uid)
+                return uid_str, uid
+    except:
+        pass
+    return None, None
+def mqtt_callback(topic, msg):
     try:
         data = ujson.loads(msg)
         uid = data.get("uid")
-        amount = data.get("amount", 0)
-        
+        amt = data.get("amount", 0)
         if not uid:
-            print("Error: No UID in top-up command")
             return
-        
-        # Update balance
-        if uid in card_balances:
-            card_balances[uid] += amount
-        else:
-            card_balances[uid] = amount
-        
-        # Publish updated balance
-        payload = {
-            "uid": uid,
-            "new_balance": card_balances[uid],
-            "timestamp": time.time()
-        }
-        
-        client.publish(TOPIC_BALANCE, ujson.dumps(payload))
-        print("✓ Balance updated:", payload)
-        
-        # Blink LED to indicate success
-        for _ in range(3):
-            led.value(0)
-            time.sleep(0.1)
-            led.value(1)
-            time.sleep(0.1)
-            
-    except Exception as e:
-        print("Error processing top-up:", e)
-
-# ================= MQTT CONNECTION =================
-def mqtt_connect():
-    """Connect to MQTT broker with error handling"""
-    try:
-        c = MQTTClient(CLIENT_ID, MQTT_BROKER, MQTT_PORT, keepalive=60)
-        c.set_callback(on_mqtt_msg)
-        c.connect()
-        c.subscribe(TOPIC_TOPUP)
-        print("MQTT connected successfully")
-        print("Client ID:", CLIENT_ID)
-        print("Subscribed to:", TOPIC_TOPUP)
-        return c
-    except Exception as e:
-        print("MQTT connection error:", e)
-        return None
-
-# ================= RFID CARD READING =================
-def read_rfid_card(rfid_reader):
-    """Read RFID card and return UID if present"""
-    try:
-        (stat, tag_type) = rfid_reader.request(rfid_reader.REQIDL)
-        
-        if stat == rfid_reader.OK:
-            (stat, raw_uid) = rfid_reader.anticoll()
-            
-            if stat == rfid_reader.OK:
-                # Convert UID to hex string
-                uid = "".join("{:02X}".format(x) for x in raw_uid)
-                return uid
-    except Exception as e:
-        print("RFID read error:", e)
-    
-    return None
-
-# ================= MAIN LOOP =================
+        if topic == T_TOPUP:
+            print(f"TOPUP: {amt} for {uid}")
+            do_topup(uid, amt)
+        elif topic == T_PAYMENT:
+            print(f"PAY: {amt} for {uid}")
+            do_payment(uid, amt)
+    except:
+        pass
+def do_topup(target_uid, amt):
+    print("Present card...")
+    start = time.time()
+    while time.time() - start < 10:
+        uid_str, uid_bytes = scan_card()
+        if uid_str == target_uid:
+            success, old_bal, new_bal, msg = execute_tx(uid_bytes, True, amt)
+            if success:
+                print(f"OK: {old_bal} -> {new_bal}")
+                client.publish(T_TOPUP_RES, ujson.dumps({
+                    "uid": uid_str,
+                    "amount": amt,
+                    "success": True,
+                    "message": "Top-up successful",
+                    "new_balance": new_bal
+                }))
+                client.publish(T_BALANCE, ujson.dumps({"uid": uid_str, "new_balance": new_bal}))
+                for _ in range(3):
+                    led.value(0)
+                    time.sleep(0.1)
+                    led.value(1)
+                    time.sleep(0.1)
+                return
+            else:
+                print(f"FAIL: {msg}")
+                client.publish(T_TOPUP_RES, ujson.dumps({
+                    "uid": uid_str,
+                    "amount": amt,
+                    "success": False,
+                    "message": msg,
+                    "new_balance": old_bal
+                }))
+                return
+        time.sleep(0.1)
+    print("TIMEOUT")
+    client.publish(T_TOPUP_RES, ujson.dumps({
+        "uid": target_uid,
+        "amount": amt,
+        "success": False,
+        "message": "Timeout"
+    }))
+def do_payment(target_uid, amt):
+    print("Present card...")
+    start = time.time()
+    while time.time() - start < 10:
+        uid_str, uid_bytes = scan_card()
+        if uid_str == target_uid:
+            success, old_bal, new_bal, msg = execute_tx(uid_bytes, False, amt)
+            if success:
+                print(f"PAID: {old_bal} -> {new_bal}")
+                client.publish(T_PAY_RES, ujson.dumps({
+                    "uid": uid_str,
+                    "amount": amt,
+                    "success": True,
+                    "message": "OK",
+                    "new_balance": new_bal
+                }))
+                client.publish(T_BALANCE, ujson.dumps({"uid": uid_str, "new_balance": new_bal}))
+                for _ in range(3):
+                    led.value(0)
+                    time.sleep(0.1)
+                    led.value(1)
+                    time.sleep(0.1)
+                return
+            else:
+                print(f"FAIL: {msg}")
+                client.publish(T_PAY_RES, ujson.dumps({
+                    "uid": uid_str,
+                    "amount": amt,
+                    "success": False,
+                    "message": msg,
+                    "new_balance": old_bal
+                }))
+                return
+        time.sleep(0.1)
+    print("TIMEOUT")
+    client.publish(T_PAY_RES, ujson.dumps({
+        "uid": target_uid,
+        "amount": amt,
+        "success": False,
+        "message": "Timeout"
+    }))
 def main():
-    """Main application loop"""
-    global client
-    
-    print("\n" + "="*50)
-    print("RFID Card Top-Up System - ESP8266")
-    print("Team ID:", TEAM_ID)
-    print("="*50 + "\n")
-    
-    # Connect to WiFi
+    global rfid, client
+    print("\n" + "="*40)
+    print("RFID Payment - ESP8266")
+    print("Team:", TEAM)
+    print("="*40 + "\n")
     if not wifi_connect():
-        print("Cannot proceed without WiFi. Restarting...")
+        print("WiFi FAIL - Restarting...")
         time.sleep(5)
         machine.reset()
-    
-    # Initialize RFID
-    rfid_reader = setup_rfid()
-    if not rfid_reader:
-        print("Cannot proceed without RFID reader. Halting...")
+    try:
+        rfid = MFRC522(sck=14, mosi=13, miso=12, rst=0, cs=15)
+        print("RFID OK")
+    except Exception as e:
+        print("RFID FAIL:", e)
         return
-    
-    # Connect to MQTT
-    client = mqtt_connect()
-    if not client:
-        print("Cannot proceed without MQTT. Restarting...")
+    try:
+        client = MQTTClient(CLIENT_ID, MQTT_BROKER, MQTT_PORT, keepalive=60)
+        client.set_callback(mqtt_callback)
+        client.connect()
+        client.subscribe(T_TOPUP)
+        client.subscribe(T_PAYMENT)
+        print("MQTT OK")
+    except Exception as e:
+        print("MQTT FAIL:", e)
         time.sleep(5)
         machine.reset()
-    
-    print("\n✓ System ready - Waiting for cards...\n")
-    
-    last_card_uid = None
-    last_scan_time = 0
-    scan_cooldown = 2  # seconds
-    
-    # Main loop
+    print("\nReady - Scan cards\n")
+    last_uid = None
+    last_time = 0
     while True:
         try:
-            # Check for incoming MQTT messages
             client.check_msg()
-            
-            # Check for RFID card
-            uid = read_rfid_card(rfid_reader)
-            
-            if uid:
-                current_time = time.time()
-                
-                # Prevent duplicate scans
-                if uid != last_card_uid or (current_time - last_scan_time) > scan_cooldown:
-                    # Initialize balance if new card
-                    if uid not in card_balances:
-                        card_balances[uid] = 0
-                    
-                    # Publish card status
-                    payload = {
-                        "uid": uid,
-                        "balance": card_balances[uid],
-                        "timestamp": current_time
-                    }
-                    
-                    client.publish(TOPIC_STATUS, ujson.dumps(payload))
-                    print("📇 Card scanned:", payload)
-                    
-                    # Blink LED
+            uid_str, uid_bytes = scan_card()
+            if uid_str:
+                now = time.time()
+                if uid_str != last_uid or (now - last_time) > 3:
+                    bal = read_balance(uid_bytes)
+                    client.publish(T_STATUS, ujson.dumps({"uid": uid_str, "balance": bal}))
+                    print(f"Card: {uid_str} | {bal} RWF")
                     led.value(0)
                     time.sleep(0.2)
                     led.value(1)
-                    
-                    last_card_uid = uid
-                    last_scan_time = current_time
-            
-            time.sleep(0.1)
-            
-        except OSError as e:
-            print("Connection error:", e)
-            print("Reconnecting...")
-            client = mqtt_connect()
-            if not client:
+                    last_uid = uid_str
+                    last_time = now
+            time.sleep(0.3)
+        except OSError:
+            print("Reconnecting MQTT...")
+            try:
+                client = MQTTClient(CLIENT_ID, MQTT_BROKER, MQTT_PORT, keepalive=60)
+                client.set_callback(mqtt_callback)
+                client.connect()
+                client.subscribe(T_TOPUP)
+                client.subscribe(T_PAYMENT)
+            except:
                 time.sleep(5)
                 machine.reset()
         except Exception as e:
-            print("Unexpected error:", e)
+            print("Error:", e)
             time.sleep(1)
-
-# ================= ENTRY POINT =================
 if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
-        print("\nShutting down...")
+        print("\nStopped")
     except Exception as e:
-        print("Fatal error:", e)
+        print("Fatal:", e)
         time.sleep(5)
         machine.reset()
