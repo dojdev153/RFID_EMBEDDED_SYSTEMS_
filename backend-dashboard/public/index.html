@@ -9,6 +9,9 @@
     <!-- Google Font -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
 
+    <!-- html2canvas for Downloadable Receipts -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+
     <style>
         :root {
             /* Premium FinTech Palette */
@@ -181,7 +184,8 @@
         /* ===== MAIN LAYOUT ===== */
         .main-content {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(340px, 450px));
+            justify-content: center;
             gap: 1.5rem;
             margin-bottom: 2rem;
         }
@@ -551,6 +555,147 @@
             opacity: 0.7;
         }
 
+        /* ===== MODALS & OVERLAYS ===== */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(4, 9, 20, 0.85);
+            backdrop-filter: blur(8px);
+            z-index: 2000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .login-card {
+            width: 100%;
+            max-width: 400px;
+            padding: 3rem 2rem;
+            animation: slideUp 0.4s ease;
+        }
+
+        .btn-role {
+            font-size: 1.1rem;
+            padding: 1.25rem;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .btn-role.agent {
+            background: linear-gradient(135deg, #10b981, #059669);
+            color: white;
+        }
+
+        .btn-role.sales {
+            background: linear-gradient(135deg, #818cf8, #4f46e5);
+            color: white;
+        }
+
+        .service-select {
+            width: 100%;
+            padding: 1rem 1.25rem;
+            border-radius: 12px;
+            border: 1px solid var(--glass-border);
+            background: rgba(15, 23, 42, 0.6);
+            color: var(--text-main);
+            font-size: 1rem;
+            appearance: none;
+            outline: none;
+            cursor: pointer;
+        }
+
+        .service-select:focus {
+            border-color: var(--primary);
+        }
+
+        .service-select option {
+            background: #0f172a;
+            color: white;
+        }
+
+        /* Receipt Card */
+        .receipt-card {
+            width: 100%;
+            max-width: 350px;
+            padding: 0;
+            overflow: hidden;
+            animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .receipt-header {
+            background: rgba(16, 185, 129, 0.1);
+            padding: 1.5rem;
+            text-align: center;
+            border-bottom: 1px dashed rgba(255, 255, 255, 0.2);
+        }
+
+        .receipt-header h3 {
+            color: var(--success);
+            margin-bottom: 0.5rem;
+        }
+
+        .receipt-date {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+        }
+
+        .receipt-body {
+            padding: 1.5rem;
+        }
+
+        .receipt-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 1rem;
+            font-size: 0.95rem;
+        }
+
+        .receipt-row span {
+            color: var(--text-muted);
+        }
+
+        .receipt-row strong {
+            color: #fff;
+            text-align: right;
+        }
+
+        .receipt-row .uid-text {
+            font-family: monospace;
+            color: var(--primary);
+        }
+
+        .receipt-row .amount-text {
+            font-size: 1.2rem;
+        }
+
+        .receipt-divider {
+            height: 1px;
+            background: rgba(255, 255, 255, 0.1);
+            margin: 1.5rem 0;
+        }
+
+        .receipt-card .btn {
+            margin: 1.5rem;
+            width: calc(100% - 3rem);
+        }
+
+        @keyframes slideUp {
+            from {
+                transform: translateY(50px);
+                opacity: 0;
+            }
+
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+
         /* ===== SCROLLBAR ===== */
         ::-webkit-scrollbar {
             width: 8px;
@@ -575,10 +720,16 @@
 <body>
     <div class="container">
 
-        <div class="header glass-panel">
-            <h1>🤖 RFID Payment System Dashboard</h1>
-            <p><strong>Team:</strong> team^_^topdog | IoT Architecture + Payment Extension</p>
-            <span class="ai-badge">AI-ENHANCED PAYMENT SYSTEM</span>
+        <div class="header glass-panel" style="display: flex; justify-content: space-between; align-items: center;">
+            <div>
+                <h1>🤖 RFID Payment System Dashboard</h1>
+                <p><strong>Team:</strong> team^_^topdog | IoT Architecture + Payment Extension</p>
+                <span class="ai-badge">AI-ENHANCED PAYMENT SYSTEM</span>
+            </div>
+            <button class="btn btn-danger" id="signOutBtn" style="width: auto; height: 40px; padding: 0 1.5rem;"
+                onclick="signOut()" style="display: none;">
+                🚪 Sign Out
+            </button>
         </div>
 
         <!-- Status Bar -->
@@ -636,23 +787,48 @@
                     <label>Card UID</label>
                     <input type="text" id="paymentUID" placeholder="Scan card or enter UID" required />
 
+                    <label>Payment Category</label>
+                    <div class="category-toggle" style="display: flex; gap: 1rem; margin-bottom: 1.5rem;">
+                        <label style="display: flex; align-items: center; gap: 0.5rem; margin: 0; cursor: pointer;">
+                            <input type="radio" name="paymentCategory" value="Service" checked
+                                onchange="updateServiceDropdown()">
+                            <span>🛠️ Service</span>
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 0.5rem; margin: 0; cursor: pointer;">
+                            <input type="radio" name="paymentCategory" value="Product"
+                                onchange="updateServiceDropdown()">
+                            <span>📦 Product</span>
+                        </label>
+                    </div>
+
+                    <label id="serviceSelectLabel">Select Service</label>
+                    <div class="service-dropdown-container" style="margin-bottom: 1.5rem;">
+                        <select id="paymentService" class="service-select" onchange="updatePaymentAmountFromService()">
+                            <!-- Options injected dynamically by JS -->
+                        </select>
+                    </div>
+
                     <label>Payment Amount (RWF)</label>
-                    <div class="quick-amounts">
+                    <div class="quick-amounts" id="quickAmountsContainer">
                         <button type="button" class="quick-amount-btn" onclick="setAmount('payment', 100)">100</button>
                         <button type="button" class="quick-amount-btn" onclick="setAmount('payment', 500)">500</button>
                         <button type="button" class="quick-amount-btn"
                             onclick="setAmount('payment', 1000)">1000</button>
                     </div>
-                    <input type="number" id="paymentAmount" placeholder="Enter amount" min="1" required />
 
+                    <input type="number" id="paymentAmount" placeholder="Enter amount" min="1" required />
                     <button class="btn btn-danger" id="paymentBtn" type="submit">💸 Process Payment</button>
+                    <button type="button" class="btn" id="lastReceiptBtn"
+                        style="margin-top: 1rem; background: rgba(255,255,255,0.05); color: var(--text-muted); box-shadow: none; border: 1px solid var(--glass-border);"
+                        onclick="showLastReceipt()" style="display:none;">🧾 Show Last Receipt</button>
                 </form>
             </div>
 
         </div>
 
         <!-- History & Logs Grid -->
-        <div class="main-content" style="grid-template-columns: 2fr 1fr;">
+        <div class="main-content"
+            style="grid-template-columns: 2fr 1fr; max-width: 100%; display: grid; justify-content: stretch;">
             <!-- Transaction History -->
             <div class="card glass-panel">
                 <h2>📊 Transaction History</h2>
@@ -671,6 +847,94 @@
         <div class="footer">
             AI-Powered RFID Payment System • MQTT • WebSockets • SQLite • team^_^topdog
         </div>
+
+        <!-- Receipt Modal (Hidden by default) -->
+        <div class="modal-overlay" id="receiptModal" style="display: none;">
+            <div class="receipt-card glass-panel" style="padding: 0;">
+
+                <!-- The actual content we will snapshot -->
+                <div id="receiptSnapshotArea"
+                    style="padding: 0; background: var(--bg-surface); border-radius: 12px 12px 0 0; overflow: hidden;">
+                    <div class="receipt-header">
+                        <h3>✅ Transaction Successful</h3>
+                        <p class="receipt-date" id="receiptDate">Oct 24, 2023 10:45 AM</p>
+                    </div>
+                    <div class="receipt-body">
+                        <div class="receipt-row">
+                            <span>Role:</span>
+                            <strong id="receiptRole">Salesperson</strong>
+                        </div>
+                        <div class="receipt-row" id="receiptServiceRow">
+                            <span>Service:</span>
+                            <strong id="receiptService">Bus Ticket</strong>
+                        </div>
+                        <div class="receipt-row">
+                            <span>Card UID:</span>
+                            <strong class="uid-text" id="receiptUID">72E4B50122</strong>
+                        </div>
+                        <div class="receipt-divider"></div>
+                        <div class="receipt-row">
+                            <span>Amount:</span>
+                            <strong class="amount-text" id="receiptAmount">500 RWF</strong>
+                        </div>
+                        <div class="receipt-row">
+                            <span>New Balance:</span>
+                            <strong id="receiptBalance">4500 RWF</strong>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Action Buttons (Not included in the downloaded image) -->
+                <div style="padding: 1.5rem; display: flex; gap: 1rem;">
+                    <button class="btn"
+                        style="flex: 1; background: rgba(56, 189, 248, 0.1); color: var(--primary); box-shadow: none;"
+                        onclick="downloadReceipt()">📥 Download PNG</button>
+                    <button class="btn" style="flex: 1;" onclick="closeReceipt()">Done</button>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Login / Registration Modal -->
+    <div class="modal-overlay login-overlay" id="loginModal">
+        <div class="login-card glass-panel">
+            <div id="authTabs"
+                style="display: flex; margin-bottom: 1.5rem; border-bottom: 1px solid rgba(255,255,255,0.1);">
+                <button class="auth-tab active" onclick="switchAuthTab('login')"
+                    style="flex:1; padding:10px; background:none; border:none; color:white; font-weight:bold; cursor:pointer;">Log
+                    In</button>
+                <button class="auth-tab" onclick="switchAuthTab('signup')"
+                    style="flex:1; padding:10px; background:none; border:none; color:rgba(255,255,255,0.5); cursor:pointer;">Sign
+                    Up</button>
+            </div>
+
+            <!-- Login Form -->
+            <form id="loginForm" onsubmit="return handleLogin(event)">
+                <label>Username</label>
+                <input type="text" id="loginUser" required />
+                <label>Password</label>
+                <input type="password" id="loginPass" required />
+                <button type="submit" class="btn"
+                    style="background: linear-gradient(135deg, #10b981, #059669); color: white;">Log In</button>
+            </form>
+
+            <!-- Sign Up Form (Hidden by default) -->
+            <form id="signupForm" style="display:none;" onsubmit="return handleSignup(event)">
+                <label>Username</label>
+                <input type="text" id="signupUser" required />
+                <label>Password</label>
+                <input type="password" id="signupPass" required />
+                <label>Role</label>
+                <select id="signupRole" class="service-select" style="margin-bottom: 1.5rem;" required>
+                    <option value="agent">🛡️ Top-up Agent</option>
+                    <option value="salesperson">🛒 Salesperson</option>
+                </select>
+                <button type="submit" class="btn"
+                    style="background: linear-gradient(135deg, #818cf8, #4f46e5); color: white;">Register
+                    Account</button>
+            </form>
+        </div>
     </div>
 
     <script>
@@ -679,6 +943,265 @@
         let ws = null;
         let reconnectInterval = null;
         let currentCardData = null;
+
+        // User State
+        let currentUserRole = null;
+        let currentUserName = null;
+
+        // --- AUTH SECTION ---
+        function switchAuthTab(tab) {
+            const loginForm = document.getElementById('loginForm');
+            const signupForm = document.getElementById('signupForm');
+            const buttons = document.querySelectorAll('#authTabs button');
+
+            buttons.forEach(btn => {
+                btn.style.color = 'rgba(255,255,255,0.5)';
+                btn.classList.remove('active');
+            });
+
+            if (tab === 'login') {
+                loginForm.style.display = 'block';
+                signupForm.style.display = 'none';
+                buttons[0].style.color = 'white';
+                buttons[0].classList.add('active');
+            } else {
+                loginForm.style.display = 'none';
+                signupForm.style.display = 'block';
+                buttons[1].style.color = 'white';
+                buttons[1].classList.add('active');
+            }
+        }
+
+        async function handleLogin(e) {
+            e.preventDefault();
+            const username = document.getElementById('loginUser').value;
+            const password = document.getElementById('loginPass').value;
+
+            try {
+                const response = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+                const result = await response.json();
+
+                if (result.success) {
+                    processSuccessfulAuth(result);
+                } else {
+                    showNotification(result.message || 'Login failed', 'error');
+                }
+            } catch (err) {
+                showNotification('Login failed. Server unreachable.', 'error');
+            }
+        }
+
+        async function handleSignup(e) {
+            e.preventDefault();
+            const username = document.getElementById('signupUser').value;
+            const password = document.getElementById('signupPass').value;
+            const role = document.getElementById('signupRole').value;
+
+            try {
+                const response = await fetch('/api/signup', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password, role })
+                });
+                const result = await response.json();
+
+                if (result.success) {
+                    showNotification('Account created! Logging you in...', 'success');
+                    // Automatically log them in
+                    document.getElementById('loginUser').value = username;
+                    document.getElementById('loginPass').value = password;
+                    handleLogin({ preventDefault: () => { } });
+                } else {
+                    showNotification(result.message || 'Signup failed', 'error');
+                }
+            } catch (err) {
+                showNotification('Signup failed. Server unreachable.', 'error');
+            }
+        }
+
+        function processSuccessfulAuth(data) {
+            currentUserRole = data.role;
+            currentUserName = data.username;
+            document.getElementById('loginModal').style.display = 'none';
+            document.getElementById('signOutBtn').style.display = 'block';
+
+            // UI Conditional Rendering
+            const topupCard = document.getElementById('topupForm').closest('.card');
+            const paymentCard = document.getElementById('paymentForm').closest('.card');
+
+            if (currentUserRole === 'agent') {
+                topupCard.style.display = 'block';
+                paymentCard.style.display = 'none';
+                showNotification(`Welcome back, Agent ${currentUserName}!`, 'success');
+                addLog(`🔐 Logged in as Agent (${currentUserName})`, 'info');
+            } else if (currentUserRole === 'salesperson') {
+                topupCard.style.display = 'none';
+                paymentCard.style.display = 'block';
+                showNotification(`Welcome back, Salesperson ${currentUserName}!`, 'success');
+                addLog(`🛒 Logged in as Salesperson (${currentUserName})`, 'info');
+                updateServiceDropdown(); // Init choices
+            }
+        }
+
+        function signOut() {
+            currentUserRole = null;
+            currentUserName = null;
+            document.getElementById('loginModal').style.display = 'flex';
+            document.getElementById('signOutBtn').style.display = 'none';
+
+            // Clear forms
+            document.getElementById('loginForm').reset();
+            document.getElementById('signupForm').reset();
+
+            addLog('🚪 User signed out', 'info');
+            showNotification('Successfully signed out.', 'success');
+        }
+
+        // --- SERVICE VS PRODUCT LOGIC ---
+        const catalog = {
+            Service: [
+                { name: 'Bus Ticket', price: 500, emoji: '🚌' },
+                { name: 'Library Fine', price: 200, emoji: '📚' },
+                { name: 'Gym Pass', price: 1000, emoji: '🏋️' }
+            ],
+            Product: [
+                { name: 'Cafeteria Meal', price: 1500, emoji: '🍽️' },
+                { name: 'Vending Machine Drink', price: 800, emoji: '🥤' },
+                { name: 'Notebook', price: 1200, emoji: '📓' }
+            ]
+        };
+
+        function updateServiceDropdown() {
+            const isService = document.querySelector('input[name="paymentCategory"][value="Service"]').checked;
+            const category = isService ? 'Service' : 'Product';
+
+            document.getElementById('serviceSelectLabel').textContent = `Select ${category}`;
+
+            const select = document.getElementById('paymentService');
+            select.innerHTML = `<option value="" disabled selected>-- Choose a ${category} --</option>`;
+
+            catalog[category].forEach(item => {
+                const opt = document.createElement('option');
+                opt.value = item.name;
+                opt.setAttribute('data-price', item.price);
+                opt.textContent = `${item.emoji} ${item.name} (${item.price} RWF)`;
+                select.appendChild(opt);
+            });
+
+            // Add custom at the end
+            const custom = document.createElement('option');
+            custom.value = 'Custom';
+            custom.textContent = '✏️ Custom Amount';
+            select.appendChild(custom);
+
+            // Reset Amount input
+            document.getElementById('paymentAmount').value = '';
+            document.getElementById('quickAmountsContainer').style.display = 'grid';
+        }
+
+        function updatePaymentAmountFromService() {
+            const select = document.getElementById('paymentService');
+            const selectedOption = select.options[select.selectedIndex];
+            const amountInput = document.getElementById('paymentAmount');
+            const quickAmounts = document.getElementById('quickAmountsContainer');
+
+            if (select.value === 'Custom') {
+                amountInput.value = '';
+                amountInput.readOnly = false;
+                quickAmounts.style.display = 'grid';
+            } else if (select.value !== '') {
+                const price = selectedOption.getAttribute('data-price');
+                amountInput.value = price;
+                amountInput.readOnly = true;
+                quickAmounts.style.display = 'none';
+            }
+        }
+
+        // --- RECEIPT LOGIC ---
+        let lastReceiptInfo = null;
+
+        function triggerReceipt(type, success, data) {
+            if (!success) return;
+
+            // Save for "Show Last Receipt" button
+            lastReceiptInfo = { type, success, data };
+            if (currentUserRole === 'salesperson') {
+                document.getElementById('lastReceiptBtn').style.display = 'inline-block';
+            }
+
+            const modal = document.getElementById('receiptModal');
+            document.getElementById('receiptDate').textContent = new Date().toLocaleString();
+            document.getElementById('receiptRole').textContent = currentUserRole === 'agent' ? `Top-Up Agent (${currentUserName})` : `Salesperson (${currentUserName})`;
+
+            if (type === 'TOPUP') {
+                document.getElementById('receiptServiceRow').style.display = 'none';
+            } else {
+                document.getElementById('receiptServiceRow').style.display = 'flex';
+
+                const isService = document.querySelector('input[name="paymentCategory"]:checked').value;
+                document.getElementById('receiptServiceRow').querySelector('span').textContent = isService + ':';
+
+                const serviceSelect = document.getElementById('paymentService');
+                const serviceName = serviceSelect.value === 'Custom' ? 'Custom Payment' : serviceSelect.value;
+                document.getElementById('receiptService').textContent = serviceName;
+            }
+
+            document.getElementById('receiptUID').textContent = data.uid;
+            document.getElementById('receiptAmount').textContent = `${data.amount} RWF`;
+            document.getElementById('receiptBalance').textContent = `${data.new_balance} RWF`;
+
+            modal.style.display = 'flex';
+        }
+
+        function closeReceipt() {
+            document.getElementById('receiptModal').style.display = 'none';
+        }
+
+        function showLastReceipt() {
+            if (lastReceiptInfo) {
+                triggerReceipt(lastReceiptInfo.type, lastReceiptInfo.success, lastReceiptInfo.data);
+            } else {
+                showNotification('No recent transactions found.', 'warning');
+            }
+        }
+
+        async function downloadReceipt() {
+            const receiptArea = document.getElementById('receiptSnapshotArea');
+            if (!receiptArea) return;
+
+            try {
+                // Use html2canvas to take a snapshot of the styled DOM element
+                const canvas = await html2canvas(receiptArea, {
+                    backgroundColor: '#1e293b', // Match var(--bg-surface)
+                    scale: 2 // Higher resolution
+                });
+
+                // Convert canvas to image data URL
+                const image = canvas.toDataURL("image/png");
+
+                // Create a temporary link element to trigger the download
+                const link = document.createElement('a');
+                link.href = image;
+
+                // Format filename with timestamp
+                const dateStr = new Date().toISOString().replace(/[:.]/g, '-');
+                link.download = `RFID_Receipt_${dateStr}.png`;
+
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+
+                showNotification('Receipt downloaded successfully!', 'success');
+                addLog('📥 Downloaded receipt PNG', 'info');
+            } catch (err) {
+                console.error('Error generating receipt image:', err);
+                showNotification('Failed to generate receipt image.', 'error');
+            }
+        }
 
         // Initialize WebSocket connection
         function connectWebSocket() {
@@ -757,7 +1280,7 @@
                     loadTransactions();
                 }
 
-                // Payment result (NEW)
+                // Payment result
                 else if (topic.includes('/card/payment/result')) {
                     if (mqttData.success) {
                         addLog(`✅ Payment successful: ${mqttData.uid} | -${mqttData.amount} RWF | Balance: ${mqttData.new_balance} RWF`, 'success');
@@ -767,6 +1290,7 @@
                             currentCardData.balance = mqttData.new_balance;
                             updateCurrentCard(currentCardData);
                         }
+                        triggerReceipt('PAYMENT', true, mqttData);
                     } else {
                         addLog(`❌ Payment failed: ${mqttData.message}`, 'error');
                         showNotification(`Payment failed: ${mqttData.message}`, 'error');
@@ -774,6 +1298,8 @@
 
                     // Reset payment form
                     document.getElementById('paymentAmount').value = '';
+                    document.getElementById('paymentService').value = '';
+                    updatePaymentAmountFromService(); // Restore custom logic
                     document.getElementById('paymentBtn').disabled = false;
                     document.getElementById('paymentBtn').textContent = '💸 Process Payment';
 
@@ -781,7 +1307,7 @@
                     loadTransactions();
                 }
 
-                // Top-up result (NEW)
+                // Top-up result
                 else if (topic.includes('/card/topup/result')) {
                     if (mqttData.success) {
                         addLog(`✅ Top-up successful: ${mqttData.uid} | +${mqttData.amount} RWF | Balance: ${mqttData.new_balance} RWF`, 'success');
@@ -791,6 +1317,7 @@
                             currentCardData.balance = mqttData.new_balance;
                             updateCurrentCard(currentCardData);
                         }
+                        triggerReceipt('TOPUP', true, mqttData);
                     } else {
                         addLog(`❌ Top-up failed: ${mqttData.message}`, 'error');
                         showNotification(`Top-up failed: ${mqttData.message}`, 'error');
@@ -887,12 +1414,15 @@
             return false;
         }
 
-        // Handle payment form submission (NEW)
+        // Handle payment form submission
         async function handlePayment(event) {
             event.preventDefault();
 
             const uid = document.getElementById('paymentUID').value.toUpperCase().trim();
             const amount = parseInt(document.getElementById('paymentAmount').value);
+            const serviceSelect = document.getElementById('paymentService');
+            const categorySelect = document.querySelector('input[name="paymentCategory"]:checked').value;
+            const service_name = serviceSelect.value === 'Custom' ? 'Custom Payment' : serviceSelect.value;
             const btn = document.getElementById('paymentBtn');
 
             if (!uid || !amount || amount <= 0) {
@@ -918,13 +1448,13 @@
                 const response = await fetch('/api/pay', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ uid, amount })
+                    body: JSON.stringify({ uid, amount, category: categorySelect, service_name, role: currentUserRole || 'Salesperson' })
                 });
 
                 const result = await response.json();
 
                 if (response.ok && result.success) {
-                    addLog(`✓ ${result.message}`, 'info');
+                    addLog(`✓ ${result.message} via ${service_name}`, 'info');
                     showNotification(result.message, 'info');
                 } else {
                     clearTimeout(unlockTimeout);
@@ -958,7 +1488,7 @@
             }
         }
 
-        // Display transactions (NEW)
+        // Display transactions
         function displayTransactions(transactions) {
             const listElement = document.getElementById('transactionList');
 
@@ -973,13 +1503,20 @@
                 const amountSign = isPositive ? '+' : '-';
                 const typeClass = tx.type.toLowerCase();
                 const date = new Date(tx.timestamp);
+                const roleBadge = tx.role ? `<span style="opacity:0.6; font-size:10px; margin-left:8px; border:1px solid rgba(255,255,255,0.2); padding:2px 6px; border-radius:8px;">${tx.role}</span>` : '';
+                const catIcon = tx.category === 'Product' ? '📦' : (tx.category === 'Service' ? '🛠️' : '💳');
+                const serviceInfo = tx.service_name ? `<br><span style="color:var(--primary); font-size:11px;">${catIcon} ${tx.service_name}</span>` : '';
 
                 return `
                     <div class="transaction-item">
                         <div>
-                            <div><span class="transaction-type ${typeClass}">${tx.type}</span></div>
+                            <div>
+                                <span class="transaction-type ${typeClass}">${tx.type}</span>
+                                ${roleBadge}
+                            </div>
                             <div style="margin-top: 5px; font-size: 13px; opacity: 0.7;">
-                                ${tx.uid}
+                                UID: <span style="font-family:monospace">${tx.uid}</span>
+                                ${serviceInfo}
                             </div>
                             <div class="transaction-time">
                                 ${date.toLocaleString()}

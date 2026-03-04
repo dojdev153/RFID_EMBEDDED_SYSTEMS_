@@ -54,6 +54,15 @@ const db = new sqlite3.Database('./rfid_transactions.db', (err) => {
 
 function initDB() {
   db.run(`
+    CREATE TABLE IF NOT EXISTS users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      username TEXT UNIQUE NOT NULL,
+      password TEXT NOT NULL,
+      role TEXT NOT NULL
+    )
+  `);
+
+  db.run(`
     CREATE TABLE IF NOT EXISTS transactions (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       uid TEXT NOT NULL,
@@ -63,6 +72,9 @@ function initDB() {
       balance_after INTEGER,
       success INTEGER DEFAULT 1,
       message TEXT,
+      role TEXT,
+      category TEXT,
+      service_name TEXT,
       timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `);
@@ -71,12 +83,12 @@ function initDB() {
   db.run(`CREATE INDEX IF NOT EXISTS idx_time ON transactions(timestamp)`);
 }
 
-function logTransaction(uid, type, amount, before, after, success = true, message = '') {
+function logTransaction(uid, type, amount, before, after, success = true, message = '', role = '', category = '', service_name = '') {
   db.run(
     `INSERT INTO transactions
-     (uid, type, amount, balance_before, balance_after, success, message)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    [uid, type, amount, before, after, success ? 1 : 0, message]
+     (uid, type, amount, balance_before, balance_after, success, message, role, category, service_name)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [uid, type, amount, before, after, success ? 1 : 0, message, role, category, service_name]
   );
 }
 
@@ -117,52 +129,37 @@ mqttClient.on('message', (topic, message) => {
   }
 });
 
+// Since ESP8266 only knows amounts, not services, we temporarily cache pending transactions
+// Map of UID -> { serviceName, role, category }
+const pendingPayments = new Map();
+
 function handleTopupResult(data) {
   if (data.success) {
     logTransaction(
-      data.uid,
-      'TOPUP',
-      data.amount,
-      data.new_balance - data.amount,
-      data.new_balance,
-      true,
-      data.message
+      data.uid, 'TOPUP', data.amount, data.new_balance - data.amount, data.new_balance, true, data.message, 'Agent', 'System', 'Wallet Top-Up'
     );
   } else {
     logTransaction(
-      data.uid,
-      'TOPUP',
-      data.amount,
-      data.new_balance || 0,
-      data.new_balance || 0,
-      false,
-      data.message
+      data.uid, 'TOPUP', data.amount, data.new_balance || 0, data.new_balance || 0, false, data.message, 'Agent', 'System', 'Wallet Top-Up'
     );
   }
 }
 
 function handlePaymentResult(data) {
+  const cache = pendingPayments.get(data.uid) || { category: 'Unknown', serviceName: 'Unknown Product', role: 'Salesperson' };
+
   if (data.success) {
     logTransaction(
-      data.uid,
-      'PAYMENT',
-      data.amount,
-      data.new_balance + data.amount,
-      data.new_balance,
-      true,
-      data.message
+      data.uid, 'PAYMENT', data.amount, data.new_balance + data.amount, data.new_balance, true, data.message, cache.role, cache.category, cache.serviceName
     );
   } else {
     logTransaction(
-      data.uid,
-      'PAYMENT',
-      data.amount,
-      data.new_balance || 0,
-      data.new_balance || 0,
-      false,
-      data.message
+      data.uid, 'PAYMENT', data.amount, data.new_balance || 0, data.new_balance || 0, false, data.message, cache.role, cache.category, cache.serviceName
     );
   }
+
+  // Clear cache for this UID
+  pendingPayments.delete(data.uid);
 }
 
 // ==================== WEBSOCKET ====================
@@ -192,6 +189,43 @@ function broadcast(payload) {
 
 // ==================== API ====================
 
+// Real Auth
+app.post('/api/signup', (req, res) => {
+  const { username, password, role } = req.body;
+  if (!username || !password || !role) {
+    return res.status(400).json({ success: false, message: 'All fields are required.' });
+  }
+
+  db.run(
+    `INSERT INTO users (username, password, role) VALUES (?, ?, ?)`,
+    [username, password, role],
+    function (err) {
+      if (err) {
+        if (err.message.includes('UNIQUE constraint failed')) {
+          return res.status(400).json({ success: false, message: 'Username already exists.' });
+        }
+        return res.status(500).json({ success: false, message: 'Database error.' });
+      }
+      res.json({ success: true, message: 'Account created successfully.' });
+    }
+  );
+});
+
+app.post('/api/login', (req, res) => {
+  const { username, password } = req.body;
+
+  db.get(
+    `SELECT * FROM users WHERE username = ? AND password = ?`,
+    [username, password],
+    (err, user) => {
+      if (err) return res.status(500).json({ success: false, message: 'Database error.' });
+      if (!user) return res.status(401).json({ success: false, message: 'Invalid username or password.' });
+
+      res.json({ success: true, username: user.username, role: user.role, message: `Logged in as ${user.username}` });
+    }
+  );
+});
+
 // Health
 app.get('/api/status', (req, res) => {
   res.json({
@@ -214,16 +248,23 @@ app.post('/api/topup', (req, res) => {
   res.json({ success: true, uid, amount, message: 'Top-up request sent to card reader' });
 });
 
-// Payment (NEW)
+// Payment
 app.post('/api/pay', (req, res) => {
-  const { uid, amount } = req.body;
+  const { uid, amount, category, service_name, role } = req.body;
 
   if (!uid || amount <= 0) {
     return res.status(400).json({ success: false, message: 'Invalid UID or amount' });
   }
 
+  // Cache the service context so we can log it when the ESP8266 confirms the transaction
+  pendingPayments.set(uid, {
+    category: category || 'Service',
+    serviceName: service_name || 'Standard Payment',
+    role: role || 'Salesperson'
+  });
+
   mqttClient.publish(TOPICS.PAYMENT, JSON.stringify({ uid, amount }));
-  res.json({ success: true, uid, amount, message: 'Payment request sent to card reader' });
+  res.json({ success: true, uid, amount, category, service_name, message: 'Payment request sent to card reader' });
 });
 
 // Transactions
