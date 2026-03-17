@@ -6,8 +6,8 @@ import ujson
 from umqtt.simple import MQTTClient
 from mfrc522 import MFRC522
 TEAM = "team^_^TopDog"
-WIFI_SSID = "RCA"
-WIFI_PASS = "@RcaNyabihu2023"
+WIFI_SSID = "nigga"
+WIFI_PASS = "zoloz234"
 MQTT_BROKER = "broker.benax.rw"
 MQTT_PORT = 1883
 T_STATUS = b"rfid/" + TEAM.encode() + b"/card/status"
